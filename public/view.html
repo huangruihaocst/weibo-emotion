@@ -3,8 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <title>SOA Assignment</title>
+    <script src="js/jquery-2.2.1.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="Flat-UI-master/dist/css/vendor/bootstrap/css/bootstrap.min.css"/>
+    <link rel="stylesheet" type="text/css" href="Flat-UI-master/dist/css/flat-ui.min.css"/>
+    <script type="application/javascript" src="Flat-UI-master/dist/js/vendor/jquery.min.js"></script>
+    <script type="application/javascript" src="Flat-UI-master/docs/assets/js/application.js"></script>
+    <script type="application/javascript" src="Flat-UI-master/dist/js/flat-ui.min.js"></script>
 </head>
 <body>
-    <a methods="get" href="https://api.weibo.com/oauth2/authorize?client_id=144361011&response_type=code&redirect_uri=http://127.0.0.1:9292/redirect">点击此处登录微博</a>
+
+    <div class="container">
+        <div class="jumbotron">
+            <h1>微博心情</h1>
+            <p>登录你的微博账号，查看你最近的心情指数</p>
+            <p>
+                <a class="btn btn-lg btn-primary" methods="get"
+                   href="https://api.weibo.com/oauth2/authorize?client_id=144361011&response_type=code&redirect_uri=http://127.0.0.1:9292/redirect" role="button">登录 &raquo;</a>
+            </p>
+        </div>
+    </div>
+
 </body>
 </html>

@@ -1,10 +1,16 @@
 require 'json'
 require 'open-uri'
 require 'net/http'
+require 'rack'
+require 'rubygems'
 
 client_id = '144361011'
 client_secret = 'af5851b75f0346ffca0a0f0563d31239'
 redirect_page = 'http://127.0.0.1:9292/redirect'
+
+use Rack::Static,
+    :urls => %w(/js /Flat-UI-master),
+    :root => 'public'
 
 def emotion(emoticons)
   emotions = {"\u{1F600}"=>1, "\u{1F601}"=>1, "\u{1F602}"=>1, "\u{1F603}"=>1, "\u{1F604}"=>1, "\u{1F605}"=>0.5,
@@ -23,7 +29,6 @@ def emotion(emoticons)
           "\u{1F64F}"=>-0.5}
   count = 0
   emoticons.each do |e|
-    puts 'value is ' + emotions[e].to_s
     count += emotions[e]
   end
   count
@@ -33,17 +38,17 @@ app = lambda do |env|
 
   url = '/' + env['REQUEST_URI'].split('/')[3..-1].join('/')
   if url == '/'
-    page = open('public/view.html').read.to_s
-    return ['200', {'Content-Type' => 'text/html'}, [page]]
+    return ['200',
+            {'Content-Type' => 'text/html',
+                'Cache-Control' => 'public, max-age=86400'},
+    File.open('public/view.html', 'r')]
   elsif url.include? '/redirect'
     #get access token
     code = url.split('=')[1]
-    page = open('public/redirect.html').read.to_s
     raw_uri = 'https://api.weibo.com/oauth2/access_token?client_id='+ client_id +
         '&client_secret=' + client_secret + '&grant_type=authorization_code&redirect_uri=' +
         redirect_page + '&code=' + code
     uri = URI(raw_uri)
-    puts uri
     res = Net::HTTP.post_form(uri, {})
     access_token = (JSON.parse res.body)['access_token']
     #get user timeline
@@ -62,7 +67,10 @@ app = lambda do |env|
       end
     end
     emotion_val = emotion(emoticons)
-    return ['200', {'Content-Type' => 'text/html'}, [emotion_val.to_s]]
+    #load html
+    page = open('public/redirect.html').read.to_s
+    page['<p>这是回调页面</p>'] = '你的分数： ' + emotion_val.to_s
+    return ['200', {'Content-Type' => 'text/html'}, [page]]
   end
 
 end

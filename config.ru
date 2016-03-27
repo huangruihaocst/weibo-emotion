@@ -7,6 +7,7 @@ require 'rubygems'
 client_id = '144361011'
 client_secret = 'af5851b75f0346ffca0a0f0563d31239'
 redirect_page = 'http://127.0.0.1:9292/redirect'
+@access_token = ''
 
 use Rack::Static,
     :urls => %w(/js /Flat-UI-master),
@@ -50,11 +51,36 @@ app = lambda do |env|
         redirect_page + '&code=' + code
     uri = URI(raw_uri)
     res = Net::HTTP.post_form(uri, {})
-    access_token = (JSON.parse res.body)['access_token']
-    #get user timeline
-    raw_uri = 'https://api.weibo.com/2/statuses/user_timeline.json?access_token=' + access_token
+    @access_token = (JSON.parse res.body)['access_token']
+    #save user info into file
+    raw_uri = 'https://api.weibo.com/2/account/get_uid.json?access_token=' + @access_token#get uid before get other info
     uri = URI(raw_uri)
     res = Net::HTTP.get(uri)
+    uid = (JSON.parse res)['uid']
+    raw_uri = 'https://api.weibo.com/2/users/show.json?access_token=' + @access_token + '&uid=' + uid.to_s#then get other info
+    uri = URI(raw_uri)
+    res = Net::HTTP.get(uri)
+    info = JSON.parse res
+    new_user = {}
+    new_user['name'] = info['screen_name']
+    new_user['uid'] = info['id']
+    origin = []
+    open('data/users') do |file|
+      origin = JSON.parse file.read.to_s
+      if origin.include? new_user
+        puts 'signed up user'
+      else
+        origin << new_user
+      end
+    end
+    open('data/users', 'w') do |file|
+      file.write origin.to_json
+    end
+    #get user timeline
+    raw_uri = 'https://api.weibo.com/2/statuses/user_timeline.json?access_token=' + @access_token
+    uri = URI(raw_uri)
+    res = Net::HTTP.get(uri)
+    #analyse user emotion
     contents = []
     res_hash = JSON.parse res
     res_hash['statuses'].each do |status|
@@ -69,8 +95,63 @@ app = lambda do |env|
     emotion_val = emotion(emoticons)
     #load html
     page = open('public/redirect.html').read.to_s
-    page['<p>这是回调页面</p>'] = '你的分数： ' + emotion_val.to_s
-    return ['200', {'Content-Type' => 'text/html'}, [page]]
+    page['这是回调页面'] = '你的分数： ' + emotion_val.to_s
+    return ['200',
+            {'Content-Type' => 'text/html',
+             'Cache-Control' => 'public, max-age=86400'},
+            [page]]
+  elsif url == '/users'
+    content = []
+    open('data/users') do |file|
+      content = JSON.parse file.read.to_s
+    end
+    return ['200',
+            {'Content-Type' => 'text/html',
+             'Cache-Control' => 'public, max-age=86400'},
+            [content.to_json]]
+  elsif url.include? '/posts'
+    posts_uid = url.split('/')[2]
+    raw_uri = 'https://api.weibo.com/2/statuses/user_timeline.json?access_token=' + @access_token + '&uid=' + posts_uid
+    uri = URI(raw_uri)
+    res = Net::HTTP.get(uri)
+    return ['200',
+            {'Content-Type' => 'text/html',
+             'Cache-Control' => 'public, max-age=86400'},
+            [res]]
+  elsif url.include? '/emotion'
+    posts_uid = url.split('/')[2]
+    #get user info
+    raw_uri = 'https://api.weibo.com/2/users/show.json?access_token=' + @access_token + '&uid=' + posts_uid#then get other info
+    uri = URI(raw_uri)
+    res = Net::HTTP.get(uri)
+    info = JSON.parse res
+    name = info['screen_name']
+    #get timeline
+    posts_uid = url.split('/')[2]
+    raw_uri = 'https://api.weibo.com/2/statuses/user_timeline.json?access_token=' + @access_token + '&uid=' + posts_uid
+    uri = URI(raw_uri)
+    res = Net::HTTP.get(uri)
+    #analyse user emotion
+    contents = []
+    res_hash = JSON.parse res
+    res_hash['statuses'].each do |status|
+      contents << status['text']
+    end
+    emoticons = []
+    contents.each do |content|
+      content.scan(/[\u{1F600}-\u{1F64F}]/) do |emoticon|
+        emoticons << emoticon
+      end
+    end
+    emotion_val = emotion(emoticons)
+    emotion_hash = {}
+    emotion_hash['name'] = name
+    emotion_hash['uid'] = posts_uid
+    emotion_hash['emotion'] = emotion_val
+    return ['200',
+            {'Content-Type' => 'text/html',
+             'Cache-Control' => 'public, max-age=86400'},
+            [emotion_hash.to_json]]
   end
 
 end

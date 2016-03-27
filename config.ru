@@ -6,7 +6,7 @@ require 'rubygems'
 
 client_id = '144361011'
 client_secret = 'af5851b75f0346ffca0a0f0563d31239'
-redirect_page = 'http://127.0.0.1:9292/redirect'
+redirect_page = 'http://kotori.a1ex.wang/redirect'
 posts_return_amount = 100
 
 use Rack::Static,

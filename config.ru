@@ -7,11 +7,24 @@ require 'rubygems'
 client_id = '144361011'
 client_secret = 'af5851b75f0346ffca0a0f0563d31239'
 redirect_page = 'http://127.0.0.1:9292/redirect'
-@access_token = ''
+posts_return_amount = 100
 
 use Rack::Static,
     :urls => %w(/js /Flat-UI-master),
     :root => 'public'
+
+def get_access_token(uid)#uid is a string
+  access_token = ''
+  open('data/users') do |file|
+    users = JSON.parse file.read.to_s
+    users.each do |user|
+      if user['uid'] == uid.to_i
+        access_token = user['access_token']
+      end
+    end
+  end
+  access_token
+end
 
 def emotion(emoticons)
   emotions = {"\u{1F600}"=>1, "\u{1F601}"=>1, "\u{1F602}"=>1, "\u{1F603}"=>1, "\u{1F604}"=>1, "\u{1F605}"=>0.5,
@@ -51,19 +64,20 @@ app = lambda do |env|
         redirect_page + '&code=' + code
     uri = URI(raw_uri)
     res = Net::HTTP.post_form(uri, {})
-    @access_token = (JSON.parse res.body)['access_token']
+    access_token = (JSON.parse res.body)['access_token']
     #save user info into file
-    raw_uri = 'https://api.weibo.com/2/account/get_uid.json?access_token=' + @access_token#get uid before get other info
+    raw_uri = 'https://api.weibo.com/2/account/get_uid.json?access_token=' + access_token#get uid before get other info
     uri = URI(raw_uri)
     res = Net::HTTP.get(uri)
     uid = (JSON.parse res)['uid']
-    raw_uri = 'https://api.weibo.com/2/users/show.json?access_token=' + @access_token + '&uid=' + uid.to_s#then get other info
+    raw_uri = 'https://api.weibo.com/2/users/show.json?access_token=' + access_token + '&uid=' + uid.to_s#then get other info
     uri = URI(raw_uri)
     res = Net::HTTP.get(uri)
     info = JSON.parse res
     new_user = {}
     new_user['name'] = info['screen_name']
     new_user['uid'] = info['id']
+    new_user['access_token'] = access_token
     origin = []
     open('data/users') do |file|
       origin = JSON.parse file.read.to_s
@@ -77,15 +91,15 @@ app = lambda do |env|
       file.write origin.to_json
     end
     #get user timeline
-    raw_uri = 'https://api.weibo.com/2/statuses/user_timeline.json?access_token=' + @access_token
+    raw_uri = 'https://api.weibo.com/2/statuses/user_timeline.json?access_token=' + access_token
     uri = URI(raw_uri)
     res = Net::HTTP.get(uri)
     #analyse user emotion
     contents = []
     res_hash = JSON.parse res
-    res_hash['statuses'].each do |status|
+    res_hash && res_hash['statuses'] && (res_hash['statuses'].each do |status|
       contents << status['text']
-    end
+    end)
     emoticons = []
     contents.each do |content|
       content.scan(/[\u{1F600}-\u{1F64F}]/) do |emoticon|
@@ -105,53 +119,84 @@ app = lambda do |env|
     open('data/users') do |file|
       content = JSON.parse file.read.to_s
     end
+    content.each do |user|
+      user.delete('access_token')
+    end
     return ['200',
-            {'Content-Type' => 'text/html',
+            {'Content-Type' => 'application/json; charset=utf-8',
              'Cache-Control' => 'public, max-age=86400'},
             [content.to_json]]
   elsif url.include? '/posts'
     posts_uid = url.split('/')[2]
-    raw_uri = 'https://api.weibo.com/2/statuses/user_timeline.json?access_token=' + @access_token + '&uid=' + posts_uid
-    uri = URI(raw_uri)
-    res = Net::HTTP.get(uri)
-    return ['200',
-            {'Content-Type' => 'text/html',
-             'Cache-Control' => 'public, max-age=86400'},
-            [res]]
+    #get access_token from file
+    access_token = get_access_token(posts_uid)
+    if access_token == ''
+      error = {}
+      error['status'] = 'error'
+      error['reason'] = '用户尚未登录过'
+      return ['200',
+              {'Content-Type' => 'application/json; charset=utf-8',
+               'Cache-Control' => 'public, max-age=86400'},
+              [error.to_json]]
+    else
+      puts access_token.is_a?(String)
+      puts posts_uid.is_a?(String)
+      raw_uri = 'https://api.weibo.com/2/statuses/user_timeline.json?access_token=' + access_token +
+          '&uid=' + posts_uid + '&count=' + posts_return_amount.to_s
+      uri = URI(raw_uri)
+      res = Net::HTTP.get(uri)
+      return ['200',
+              {'Content-Type' => 'application/json; charset=utf-8',
+               'Cache-Control' => 'public, max-age=86400'},
+              [res]]
+    end
   elsif url.include? '/emotion'
     posts_uid = url.split('/')[2]
-    #get user info
-    raw_uri = 'https://api.weibo.com/2/users/show.json?access_token=' + @access_token + '&uid=' + posts_uid#then get other info
-    uri = URI(raw_uri)
-    res = Net::HTTP.get(uri)
-    info = JSON.parse res
-    name = info['screen_name']
-    #get timeline
-    posts_uid = url.split('/')[2]
-    raw_uri = 'https://api.weibo.com/2/statuses/user_timeline.json?access_token=' + @access_token + '&uid=' + posts_uid
-    uri = URI(raw_uri)
-    res = Net::HTTP.get(uri)
-    #analyse user emotion
-    contents = []
-    res_hash = JSON.parse res
-    res_hash['statuses'].each do |status|
-      contents << status['text']
-    end
-    emoticons = []
-    contents.each do |content|
-      content.scan(/[\u{1F600}-\u{1F64F}]/) do |emoticon|
-        emoticons << emoticon
+    #get access_token
+    access_token = get_access_token(posts_uid)
+    if access_token == ''
+      error = {}
+      error['status'] = 'error'
+      error['reason'] = '用户尚未登录过'
+      return ['200',
+              {'Content-Type' => 'application/json; charset=utf-8',
+               'Cache-Control' => 'public, max-age=86400'},
+              [error.to_json]]
+    else
+      #get user info
+      raw_uri = 'https://api.weibo.com/2/users/show.json?access_token=' + access_token + '&uid=' + posts_uid#then get other info
+      uri = URI(raw_uri)
+      res = Net::HTTP.get(uri)
+      info = JSON.parse res
+      name = info['screen_name']
+      #get timeline
+      posts_uid = url.split('/')[2]
+      raw_uri = 'https://api.weibo.com/2/statuses/user_timeline.json?access_token=' + access_token +
+          '&uid=' + posts_uid + '&count=' + posts_return_amount.to_s
+      uri = URI(raw_uri)
+      res = Net::HTTP.get(uri)
+      #analyse user emotion
+      contents = []
+      res_hash = JSON.parse res
+      res_hash['statuses'].each do |status|
+        contents << status['text']
       end
+      emoticons = []
+      contents.each do |content|
+        content.scan(/[\u{1F600}-\u{1F64F}]/) do |emoticon|
+          emoticons << emoticon
+        end
+      end
+      emotion_val = emotion(emoticons)
+      emotion_hash = {}
+      emotion_hash['name'] = name
+      emotion_hash['uid'] = posts_uid
+      emotion_hash['emotion'] = emotion_val
+      return ['200',
+              {'Content-Type' => 'application/json; charset=utf-8',
+               'Cache-Control' => 'public, max-age=86400'},
+              [emotion_hash.to_json]]
     end
-    emotion_val = emotion(emoticons)
-    emotion_hash = {}
-    emotion_hash['name'] = name
-    emotion_hash['uid'] = posts_uid
-    emotion_hash['emotion'] = emotion_val
-    return ['200',
-            {'Content-Type' => 'text/html',
-             'Cache-Control' => 'public, max-age=86400'},
-            [emotion_hash.to_json]]
   end
 
 end
